@@ -13,18 +13,26 @@
 
 典型用法（MediaMTX 跑在 Windows 上）：
 
-    Windows：  mediamtx.exe              （默认监听 8554）
+    Windows：  mediamtx.exe                     （默认监听 8554）
     板子：     ./run.sh --rtsp rtsp://192.168.1.100:8554/hand
     客户端：   VLC 打开 rtsp://192.168.1.100:8554/hand
+
+⚠️ 端口一定要写。RTSP 标准默认端口是 554，而 MediaMTX 默认是 8554。
+   写成 rtsp://IP/hand 会去连 IP:554，连不上，服务器上也就没有这条流。
 """
 import shutil
+import socket
 import subprocess
 import threading
 import time
+from urllib.parse import urlparse
 
 import cv2
 
 from preview import draw_frame
+
+# RTSP 标准默认端口（MediaMTX 默认用 8554，所以这个默认值经常是坑）
+DEFAULT_RTSP_PORT = 554
 
 
 class RtspPublisher:
@@ -32,7 +40,7 @@ class RtspPublisher:
                  bitrate="1500k", preset="ultrafast", annotate=True,
                  ffmpeg="ffmpeg"):
         """
-        url      : rtsp://<服务器IP>:8554/<流名>
+        url      : rtsp://<服务器IP>:<端口>/<流名>
         fps      : 推流帧率上限（主循环更慢时以主循环为准）
         bitrate  : 码率，局域网可用 1500k~3000k
         annotate : 是否把检测框烧进画面
@@ -46,6 +54,17 @@ class RtspPublisher:
         self.annotate = annotate
         self.ffmpeg = ffmpeg
 
+        # ---- 解析 URL，尽早暴露"没写端口"这种错误 ----
+        parsed = urlparse(url)
+        if parsed.scheme not in ("rtsp", "rtsps"):
+            raise ValueError("不是 RTSP 地址: %s" % url)
+        self._host = parsed.hostname
+        self._port = parsed.port
+        self._path = parsed.path or "/"
+        self.port_missing = self._port is None
+        if self._port is None:
+            self._port = DEFAULT_RTSP_PORT
+
         self._lock = threading.Lock()
         self._latest = None          # 最新原始帧（已拷贝，避免被主循环覆写）
         self._dets = []
@@ -56,12 +75,32 @@ class RtspPublisher:
         self.stopping = False
         self._proc = None
         self._thread = None
-        self._backoff = 0.0          # 当前重连退避秒数
+        self._backoff = 0.0
         self._last_error = ""
+        self._warned_unreachable = False
 
         self.pushed = 0
         self.dropped = 0
         self.restarts = 0
+
+    # ------------------------------------------------------------------
+    def hint(self):
+        """给用户看的诊断提示（启动时打印一次）"""
+        if self.port_missing:
+            return ("URL 未指定端口，将使用 RTSP 默认端口 %d；"
+                    "但 MediaMTX 默认监听 8554。建议改成：\n"
+                    "        rtsp://%s:8554%s" % (DEFAULT_RTSP_PORT, self._host, self._path))
+        return None
+
+    def _reachable(self, timeout=2.0):
+        """推流前先探一下服务器在不在，比让 ffmpeg 反复失败要清楚得多"""
+        try:
+            s = socket.create_connection((self._host, self._port), timeout)
+            s.close()
+            return True
+        except OSError as e:
+            self._last_error = "连不上 %s:%d (%s)" % (self._host, self._port, e.strerror or e)
+            return False
 
     # ------------------------------------------------------------------
     def _spawn(self):
@@ -69,7 +108,6 @@ class RtspPublisher:
         if shutil.which(self.ffmpeg) is None:
             raise RuntimeError("找不到 ffmpeg，可 sudo apt install ffmpeg")
 
-        # buf size 用 2 倍码率，避免码率抖动时丢帧
         try:
             br = int(str(self.bitrate).rstrip("kK"))
         except ValueError:
@@ -97,9 +135,10 @@ class RtspPublisher:
             "-f", "rtsp", "-rtsp_transport", "tcp",
             self.url,
         ]
+        # 注意：stderr 用 DEVNULL。若用 PIPE 又不读，ffmpeg 输出一多就会写满管道卡死
         return subprocess.Popen(cmd, stdin=subprocess.PIPE,
                                 stdout=subprocess.DEVNULL,
-                                stderr=subprocess.PIPE)
+                                stderr=subprocess.DEVNULL)
 
     # ------------------------------------------------------------------
     def update(self, frame, dets=None, gesture=None, stats=None):
@@ -122,7 +161,6 @@ class RtspPublisher:
                 time.sleep(min(0.01, next_t - now))
                 continue
 
-            # 退避期内先不尝试重连
             if self._backoff > 0:
                 time.sleep(self._backoff)
                 self._backoff = 0.0
@@ -145,16 +183,25 @@ class RtspPublisher:
 
             try:
                 if self._proc is None or self._proc.poll() is not None:
+                    # 先探连通性：服务器不在就别反复起进程
+                    if not self._reachable():
+                        if not self._warned_unreachable:
+                            print("[RTSP] %s" % self._last_error)
+                            self._warned_unreachable = True
+                        self.dropped += 1
+                        self._backoff = min(5.0, max(1.0, self._backoff * 2 or 1.0))
+                        continue
+                    self._warned_unreachable = False
                     self._proc = self._spawn()
                     self.restarts += 1
+
                 self._proc.stdin.write(out.tobytes())
                 self._proc.stdin.flush()
                 self.pushed += 1
                 self._backoff = 0.0
             except (BrokenPipeError, OSError, ValueError, RuntimeError) as e:
-                # ffmpeg 挂了/连不上：丢这一帧，按指数退避重试
                 self.dropped += 1
-                self._last_error = str(e)[:80]
+                self._last_error = str(e)[:100]
                 try:
                     if self._proc:
                         self._proc.kill()
@@ -162,7 +209,6 @@ class RtspPublisher:
                 except Exception:
                     pass
                 self._proc = None
-                # 0.5s -> 1s -> 2s -> 4s -> 最多 5s
                 self._backoff = min(5.0, max(0.5, self._backoff * 2 or 0.5))
 
     # ------------------------------------------------------------------
@@ -196,10 +242,10 @@ class RtspPublisher:
             "dropped": self.dropped,
             "restarts": self.restarts,
             "alive": alive,
+            "last_error": self._last_error,
         }
 
     def short_status(self):
-        """给画面叠加用的一行字"""
         st = self.status()
         if st["alive"]:
             return "rtsp: on (%d)" % st["pushed"]

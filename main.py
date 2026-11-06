@@ -171,6 +171,9 @@ def main():
             ).start()
             print("RTSP 推流 -> %s  (%d fps, %s)" % (
                 rtsp_url, rconf.get("fps", 8), rconf.get("bitrate", "1500k")))
+            _hint = publisher.hint()
+            if _hint:
+                print("[WARN] %s" % _hint)
             print("   Windows 上用 VLC 打开这个地址；或 ffplay/其他设备拉流")
         except Exception as e:
             print("[WARN] RTSP 推流启动失败: %s" % e)

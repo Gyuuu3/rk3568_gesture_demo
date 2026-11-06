@@ -1,5 +1,7 @@
 # RK3568 手势识别 → 引脚控制
 
+![效果预览](docs/screenshots/banner.jpg)
+
 在 **KICKPI K1 MINI（RK3568）** 上用 YOLO 实时识别「石头 / 剪刀 / 布」，
 把识别结果输出到扩展引脚上驱动 LED，并提供**网页实时预览**与 **RTSP 推流**。
 
@@ -13,6 +15,13 @@ USB 摄像头 → YOLO(ONNX, CPU) → 手势 → 时间平滑 → 三个扩展�
 - 识别到某个手势 → 对应引脚输出 **1**，其余两个 **0**
 - 没识别到 → **全部 0**
 - 电脑浏览器可实时看到带检测框的画面，VLC 也能拉 RTSP 流
+
+| ✊ rock → `gpio4c4`（Pin27） | ✌️ scissors → `gpio3b6`（Pin32） | ✋ paper → `gpio4c6`（Pin25） |
+| :---: | :---: | :---: |
+| ![rock](docs/screenshots/01-rock.jpg) | ![scissors](docs/screenshots/02-scissors.jpg) | ![paper](docs/screenshots/03-paper.jpg) |
+
+> 截图为实际运行画面：左上角是手势、帧率、推理耗时、当前输出引脚和 RTSP 状态，
+> 框上的数字是置信度。三张图都是通过 VLC 拉流截的（`rtsp: on`），说明推流同时在跑。
 
 | 手势 | 40Pin | GPIO | 输出引脚（LED 节点） |
 | --- | --- | --- | --- |
@@ -132,6 +141,13 @@ ffmpeg -rtsp_transport tcp -i rtsp://192.168.1.100:8554/hand -c copy out.mp4
 
 也可以写进 `config.json` 的 `rtsp` 段，之后 `./run.sh` 直接推流。
 
+> **⚠️ 端口一定要写清楚。**
+> RTSP 的标准默认端口是 **554**，而 MediaMTX 默认监听 **8554**。
+> 写成 `rtsp://192.168.1.100/hand` 会去连 `:554`，连不上，
+> 于是服务器上根本没有这条流，VLC 只会报
+> `no stream is available on path 'hand'`——看起来像是 VLC 的问题，其实是没推上去。
+> 程序启动时会检查端口并在缺失时给出提示。
+
 ### ③ 静态图验证
 
 ```bash
@@ -184,7 +200,8 @@ rk3568_gesture_demo/
 │   └── export_onnx.py      # .pt → ONNX（换模型时才用）
 └── docs/
     ├── 项目复盘.md          # 开发过程、踩坑记录、方法论
-    └── 引脚电压域分析.md
+    ├── 引脚电压域分析.md
+    └── screenshots/         # README 用的效果图
 ```
 
 ## 工作流程
