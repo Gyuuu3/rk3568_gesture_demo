@@ -1,0 +1,31 @@
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# ===== 本项目的输出目录 =====
+out_img/
+cap/
+samples/
+samples_eval/
+
+# ===== 原始训练权重（体积大，用 scripts/export_onnx.py 重新导出即可）=====
+*.pt
+*.pth
+
+# 注意：models/hand_gesture.onnx 需要提交，别忽略它
+!models/*.onnx
+
+# ===== 编辑器 / 系统 =====
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ===== 日志 =====
+*.log

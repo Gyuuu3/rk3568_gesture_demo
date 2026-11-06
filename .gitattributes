@@ -1,0 +1,14 @@
+# 统一用 LF，避免在 Windows 上提交后 Linux 端脚本出现 ^M
+* text=auto eol=lf
+
+*.sh   text eol=lf
+*.py   text eol=lf
+*.md   text eol=lf
+*.json text eol=lf
+*.txt  text eol=lf
+
+# 二进制文件不做换行转换
+*.onnx binary
+*.pt   binary
+*.jpg  binary
+*.png  binary

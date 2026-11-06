@@ -1,0 +1,41 @@
+{
+  "camera": {
+    "device": "/dev/video10",
+    "width": 640,
+    "height": 480,
+    "fps": 30,
+    "use_mjpg": true
+  },
+  "model": {
+    "path": "models/hand_gesture.onnx",
+    "input_size": 320,
+    "conf_thres": 0.40,
+    "iou_thres": 0.45,
+    "num_threads": 4,
+    "class_names": ["paper", "rock", "scissors"]
+  },
+  "preview": {
+    "enabled": true,
+    "port": 8080,
+    "quality": 70,
+    "max_fps": 15
+  },
+  "rtsp": {
+    "enabled": false,
+    "url": "rtsp://192.168.137.1:8554/hand",
+    "fps": 8,
+    "bitrate": "1500k",
+    "annotate": true
+  },
+  "_comment_pins": "只用 3.3V 域的引脚：gpio3b5(Pin29)/gpio3b6(Pin32) 属 VCCIO5，gpio4c4(Pin27)/gpio4c6(Pin25) 属 VCCIO7，都是 VCC_3V3。GPIO1_D0(Pin36)/GPIO1_D4(Pin38) 属 VCCIO2=1.8V，点不亮 3.3V LED，勿用。",
+  "gesture_to_led": {
+    "rock": "gpio4c4",
+    "paper": "gpio4c6",
+    "scissors": "gpio3b6"
+  },
+  "behavior": {
+    "stable_frames": 5,
+    "no_gesture_frames": 10,
+    "print_every_n_frames": 15
+  }
+}

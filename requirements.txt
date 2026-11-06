@@ -1,0 +1,14 @@
+# ===== 运行必需 =====
+# 板子上 OpenCV 和 numpy 通常由系统自带（Ubuntu 20.04: cv2 4.8 / numpy 1.24）
+numpy>=1.20
+opencv-python-headless>=4.5 ; python_version >= "3.9"
+onnxruntime==1.16.3
+
+# 说明：
+#   * 不指定版本时 pip 会拉最新版，但 Ubuntu 20.04 自带 pip 20.0.2 太老，
+#     认不出 manylinux_2_28 标签，导致"找不到可用版本"。锁定 1.16.3 可绕开。
+#   * 如果板上已有能用的 cv2，可以注释掉 opencv 那行，避免重复安装。
+
+# ===== 仅在重新导出模型时需要（体积很大，日常运行不用装）=====
+# torch>=2.0
+# ultralytics>=8.2
